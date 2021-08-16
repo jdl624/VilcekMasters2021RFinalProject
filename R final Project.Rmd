@@ -1,0 +1,170 @@
+---
+title: "ACE Score Influence on Reaction to MS Diagnosis"
+author: "Jon Links"
+date: "8/16/2021"
+output:
+  slidy_presentation: default
+  ioslides_presentation: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+## Background
+
+The dataset I chose to analyze is from a longitudinal study over a year, tracking various mental health scores after an MS diagnosis. Participants were recruited immediately after being formally diagnosed and were sent a survey to fill out at baseline (BL) and at a one year followup timepoint (FU).
+
+This study aimed to test whether adverse childhood experiences predict MS patients’ health-related quality of life and emotional functioning at time of diagnosis and initial course of disease.
+
+Questionnaires used in this study were the Adverse Childhood Events Questionnaire, 36-Item Short Form Health Survey (SF-36), and Self-Management Screening (SeMaS).
+
+## Loading in the dataset and necessary packages
+```{r preparation}
+setwd("~/Documents/VilcekMasters2021RFinalProject")
+nursing <- read.csv('https://raw.githubusercontent.com/jdl624/VilcekMasters2021RFinalProject/main/Nursing%20Deidentified%20Database.csv')
+library(dplyr)
+library(ggplot2)
+library(tidyverse)
+library(e1071)
+library(ggpubr)
+```
+
+## Dataset Cleaning and Recoding
+Some measures taken need to be deleted from the dataset as they were added mid study when few participants were being recruited, thus the values for these columns are mainly NA
+
+I recoded the sex, race, and ethnicity variables to make the data easier to understand.
+```{r Data Cleaning and Recoding}
+nursing$sex <- recode_factor(nursing$sex, '1' = 'Male', '0' = 'Female')
+nursing$race <- recode_factor(nursing$race, '1' = 'White', '2' = 'Black/African American')
+nursing$ethnicity <- recode_factor(nursing$ethnicity, '1' = 'Hispanic/Latino', '2' = 'Not Hispanic/Latino')
+nursing$relapse_six <- recode_factor(nursing$relapse_six, '1' = "Yes", '0' = "No")
+nursing <- select(nursing, -c('nyu_mrn','redcap_survey_identifier','par_stat','dmt','sym_ther','dmt_fu','sym_ther_fu', 'ptgi_sum_FU', 'bfs_sum_FU', 'marital','mskq_sum_score_BL', 'mskq_sum_score_FU', 'edss_fu', 'subtype_fu', 'relapse_six_fu'))
+```
+
+Now that the columns with the most missing data have been removed, we can choose to remove participants who've not fully answered the questionnaires
+
+```{r Omitting NAs from dataset}
+nursing <- na.omit(nursing)
+```
+
+After omitting participants with missing data, the total number of participants is 21.
+ 
+## Difference Scores for SF36 Subscores and Self Management Screening (SeMaS) Subscores
+The SF36 and SeMaS questionnaires guage different aspects of a person's mental health and social support system. All items were scored and the difference between the baseline and followup values needs to be used to see if the ACE score is a possible reason for any improvement or decline.
+
+```{r Creating Change Scores of Battery Subscores}
+
+nursing <- nursing %>% mutate(sf36_Ment_Health_FU - sf36_Ment_Health_BL)
+nursing <- rename(nursing, "SF36_MH_Dif" = 'sf36_Ment_Health_FU - sf36_Ment_Health_BL')
+nursing <- nursing %>% mutate(sf36_Role_Emo_FU - sf36_Role_Emo_BL)
+nursing <- rename(nursing, "SF36_RE_Dif" = 'sf36_Role_Emo_FU - sf36_Role_Emo_BL')
+nursing <- nursing %>% mutate(sf36_Vitality_FU - sf36_Vitality_BL)
+nursing <- rename(nursing, "SF36_Vi_Dif" = 'sf36_Vitality_FU - sf36_Vitality_BL')
+nursing <- nursing %>% mutate(sf36_Bodily_Pain_FU - sf36_Bodily_Pain_BL)
+nursing <- rename(nursing, "SF36_BP_Dif" = 'sf36_Bodily_Pain_FU - sf36_Bodily_Pain_BL')
+nursing <- nursing %>% mutate(sf36_Social_Func_FU - sf36_Social_Func_BL)
+nursing <- rename(nursing, "SF36_SF_Dif" = 'sf36_Social_Func_FU - sf36_Social_Func_BL')
+nursing <- nursing %>% mutate(semas_skills_FU - semas_skills_BL)
+nursing <- rename(nursing, "SEMAS_Skills_Dif" = 'semas_skills_FU - semas_skills_BL')
+nursing <- nursing %>% mutate(semas_self_efficacy_FU - semas_self_efficacy_BL)
+nursing <- rename(nursing, "SEMAS_SelfEf_Dif" = 'semas_self_efficacy_FU - semas_self_efficacy_BL')
+nursing <- nursing %>% mutate(semas_social_support_FU - semas_social_support_BL)
+nursing <- rename(nursing, "SEMAS_Soc_Sup_Dif" = 'semas_social_support_FU - semas_social_support_BL')
+nursing <- nursing %>% mutate(semas_anxiety_FU - semas_anxiety_BL)
+nursing <- rename(nursing, "SEMAS_Anx_Dif" = 'semas_anxiety_FU - semas_anxiety_BL')
+nursing <- nursing %>% mutate(semas_depression_FU - semas_depression_BL)
+nursing <- rename(nursing, "SEMAS_Dep_Dif" = 'semas_depression_FU - semas_depression_BL')
+```
+We will use these values to run the statistical analyses to see if a person's ACE score has any impact on their ability to cope with an MS Diagnosis.
+
+
+## Summary of SF36 and SeMaS difference scores individually and by ACE score
+```{r Summary Stats of Each Subscore}
+
+for (i in 33:42) {
+  print('********************************************************************************************************************************')
+  print(names(nursing[i]))
+  print(summary(nursing[i]))
+}
+
+for (i in 33:42) {
+  print('******************************************************************************************************************************* ')
+  print(names(nursing[i]))
+  print(by(nursing[,i], nursing$ACE_Score_BL, summary))
+}
+```
+
+## Data Visualization: Finding Distributions
+Here we'll use a collection of histograms to determine the distribution of the difference values for each subset of both the SF36 and SeMaS
+```{r Creating Histograms}
+h1 <- ggplot(nursing, aes(x = SEMAS_Anx_Dif)) + geom_histogram(binwidth = 1, fill = '#57068c') + xlab("SeMaS Anx. Change") + ylab("Frequency")
+h2 <- ggplot(nursing, aes(x = SEMAS_Dep_Dif)) + geom_histogram(binwidth = 1, fill = '#57068c') + xlab("SeMaS Dep. Change")+ ylab("Frequency")
+h3 <- ggplot(nursing, aes(x = SEMAS_Skills_Dif)) +geom_histogram(binwidth = 1, fill = '#57068c') + xlab("SeMaS Skills Change")+ ylab("Frequency")
+h4 <- ggplot(nursing, aes(x = SEMAS_Soc_Sup_Dif)) +geom_histogram(binwidth = 1, fill = '#57068c') + xlab("SeMaS Soc. Sup. Change")+ ylab("Frequency")
+h5 <- ggplot(nursing, aes(x = SF36_MH_Dif)) +geom_histogram(binwidth = 1, fill = '#57068c') + xlab("SF36 Ment. Health Change")+ ylab("Frequency")
+h6 <- ggplot(nursing, aes(x = SF36_RE_Dif)) +geom_histogram(binwidth = 1, fill = '#57068c') + xlab("SF36 Role Emo. Change")+ ylab("Frequency")
+h7 <- ggplot(nursing, aes(x = SF36_Vi_Dif)) +geom_histogram(binwidth = 1, fill = '#57068c') + xlab("SF36 Vitality Change")+ ylab("Frequency")
+h8 <- ggplot(nursing, aes(x = SF36_SF_Dif)) +geom_histogram(binwidth = 1, fill = '#57068c') + xlab("SF36 Soc. Func. Change")+ ylab("Frequency")
+h9 <- ggplot(nursing, aes(x = SF36_BP_Dif)) +geom_histogram(binwidth = 1, fill = '#57068c')+ xlab("SF36 Body Pain Change")+ ylab("Frequency")
+
+ggarrange(h1, h2, ncol = 1, nrow = 2)
+ggarrange(h3, h4, ncol = 1, nrow = 2)
+ggarrange(h5, h6, ncol = 1, nrow = 2)
+ggarrange(h7, h8, h9, ncol = 1, nrow = 3)
+```
+
+We can also use skewness to gauge the data's distribtuion per subscore.
+```{r Evaluating Skew}
+skew <- sapply(nursing[,33:42],skewness)
+skew
+```
+## Statistical Tests
+Correlational tests are the best way to see if ACE's have any impact on the imporvement or decline in these mental health scores.
+```{r Correlations}
+for (i in 33:42){
+print(names(nursing[i]))
+print(cor.test(nursing$ACE_Score_BL, nursing[,i], method = "pearson"))
+print("**************************************************************************************************")
+}
+```
+The only subscore that has a significant correlation to ACE score is the SeMaS anxiety score, thus we'll continue our analyses with this subscore only to see if the ACE score alone can account for the change in anxiety from baseline to followup.
+
+## Regression Analysis
+Running a regression analysis will allow us to see if it really is ACE's that are causing the difference in anxiety between baseline and followup. First I'll check to see if the change score for anxiety fits a normal distribution, and then I'll run a linear regression model to see if ACE's  can account for the difference.
+``` {r Ensuring data is normally distributed}
+library(pastecs)
+stat.desc(nursing$SEMAS_Anx_Dif, norm = TRUE)
+```
+The data follows a normal distribution
+
+```{r Creating Linear Model with Multiple Variables}
+Anx_mod = lm(SEMAS_Anx_Dif ~ ACE_Score_BL + edss + age + race + sex, data = nursing)
+summary(Anx_mod)
+```
+
+From now on we will focus on the impact of ACE's on the SeMaS anxiety change score.
+
+```{r}
+Anx_mod_2 <- lm(SEMAS_Anx_Dif ~ ACE_Score_BL, data = nursing)
+summary(Anx_mod_2)
+confint(Anx_mod_2)
+AIC(Anx_mod, Anx_mod_2)
+```
+
+## Analyzing Anxiety Linear Regression Model
+```{r}
+plot(Anx_mod_2)
+```
+
+Residuals vs. fitted: randomly distributed around the line, meaning that its likely the data fits our assumptions. 
+
+QQ plot: Residuals do not seem to be heavily skewed. 
+
+Scaled Location plot: Heteroscedasticity of the data is appropriate. 
+
+Residuals vs Leverage: There are a few outliers that could be skewing our data, which is to be expected with such a small sample size.
+
+## Results
+From these statistical analyses, it is possible that more adverse childhood events puts one at a higher risk of increased anxiety one year after a formal MS diagnosis. To get a more accurate view of how ACEs impact an emotional reaction to an MS diagnosis that larger sample size would be essential and possibly a study with a longer time period or possibly multiple yearly followups for an extended period of time to see how these values fluctuate as time passes and to see if the number of ACEs someone has had impacts those fluctuations.
+
+## Thank you!
